@@ -1,0 +1,25 @@
+#!/bin/ash
+# 检查mangabz漫画最新章节
+staticpath=/var/www/static
+tmpfile=$staticpath/test.html
+dbfile=$staticpath/chapter.db
+subfile=$staticpath/sub.db
+while read line; do
+    subhref=$(echo $line | cut -d ',' -f1)
+    name=$(echo $line | cut -d ',' -f2)
+    curl -s https://www.mangabz.com$subhref/ >$tmpfile
+    href=$(cat $tmpfile | grep -P "chapterlistload.*?/m\d+" -o | grep -P "/m\d+" -o)
+    chapter=$(cat $tmpfile | grep -P "chapterlistload.*?</span" -o | grep -P " >.*>.*?<" -o | sed 's/\s//g' | sed 's/>//g' | sed 's/<span//g' | sed 's/<//g')
+    # if [ -f $dbfile ]; then
+    #     sed -i '/\\$1/d' $dbfile
+    # fi
+    filehref=$(cat $dbfile | grep $subhref | cut -d ',' -f2)
+    echo "文件最新章节：$filehref,网站最新章节：$href"
+
+    if [[ -n "$(cat $dbfile | grep $subhref)" && "$filehref" != "$href" ]]; then
+        echo "${name}发现新章节：${chapter}"
+        sed -i "/\\$subhref/d" $dbfile
+    fi
+    echo $subhref,$href,$chapter >>$dbfile
+    rm $tmpfile
+done <$subfile

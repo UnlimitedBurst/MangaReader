@@ -1,0 +1,2 @@
+checkUpdate.png filter=lfs diff=lfs merge=lfs -text
+rank.png filter=lfs diff=lfs merge=lfs -text
