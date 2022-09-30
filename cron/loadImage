@@ -1,0 +1,79 @@
+#!/bin/ash
+#爬取mangabz漫画章节图片
+function _getVar() {
+    echo $(cat $tmpfile | grep -P "(?<=$1=).*?;" -o)
+}
+
+function getVar() {
+    var=$(_getVar "$1 ")
+    if [[ -z "$var" ]]; then
+        var=$(_getVar "$1")
+    fi
+    echo $var | sed 's/;//g' | sed 's/"//g'
+}
+
+staticpath=/var/www/static
+export tmpfile=$staticpath/test.html
+href=https://www.mangabz.com$1/
+curl -s $href >$tmpfile
+MANGABZ_CTITLE=$(getVar MANGABZ_CTITLE)
+MANGABZ_CID=$(getVar MANGABZ_CID)
+MANGABZ_PAGE=1
+mkey=""
+MANGABZ_MID=$(getVar MANGABZ_MID)
+MANGABZ_VIEWSIGN_DT=$(getVar MANGABZ_VIEWSIGN_DT | sed 's/ /+/g' | sed 's/:/%3A/g')
+MANGABZ_VIEWSIGN=$(getVar MANGABZ_VIEWSIGN)
+MANGABZ_IMAGE_COUNT=$(getVar MANGABZ_IMAGE_COUNT)
+echo -e "MANGABZ_CTITLE=${MANGABZ_CTITLE}\nMANGABZ_CID=${MANGABZ_CID}\nMANGABZ_MID=${MANGABZ_MID}\nMANGABZ_VIEWSIGN_DT=${MANGABZ_VIEWSIGN_DT}\nMANGABZ_VIEWSIGN=${MANGABZ_VIEWSIGN}\nMANGABZ_IMAGE_COUNT=${MANGABZ_IMAGE_COUNT}"
+
+# 解析图片地址
+
+tmpjson=$staticpath/test.json
+tmpresult=$staticpath/test.result
+touch $tmpresult
+
+while [[ $(cat $tmpresult | wc -l) -lt $MANGABZ_IMAGE_COUNT ]]; do
+    echo "MANGABZ_PAGE=$MANGABZ_PAGE"
+    js=$(curl -s -H "referer: $href" ${href}chapterimage.ashx?cid=${MANGABZ_CID}\&page=${MANGABZ_PAGE}\&key=${mkey}\&_cid=${MANGABZ_CID}\&_mid=${MANGABZ_MID}\&_dt=${MANGABZ_VIEWSIGN_DT}\&_dt=${MANGABZ_VIEWSIGN_DT}\&_sign=${MANGABZ_VIEWSIGN})";console.info(d)"
+    echo js=$js
+    # 调用在线执行js接口
+    token=$(curl -X POST -s https://runcode.bejson.com/try_run?action=get_token --data-urlencode "source_code=$js" -d language_id=63 | grep -P "\w+(-\w+){4}" -o)
+    echo token=$token
+
+    while true; do
+        sleep 1
+        curl -s https://runcode.bejson.com/try_run?action=get_result\&token=${token} >$tmpjson
+        # cat $tmpjson
+        if [[ -z "$(cat $tmpjson | grep '"stdout":null')" ]]; then
+            line="\n"
+            if [[ $(cat $tmpresult | wc -l) -eq 0 ]]; then
+                line=""
+            fi
+            newdata=$(echo -e $(cat $tmpjson | grep -P '(?<=stdout":").*?,' -o | sed 's/",//g') | base64 -d | grep -P 'https.*=' -o)
+
+            echo -e "$(cat $tmpresult)${line}${newdata}" | sort -u >$tmpresult.tmp
+
+            cp $tmpresult.tmp $tmpresult
+
+            echo 漫画章节爬取进度：$(cat $tmpresult | wc -l)/$MANGABZ_IMAGE_COUNT
+            break
+        fi
+    done
+    sleep 1
+    let MANGABZ_PAGE+=1
+done
+
+#下载图片
+imgpath=$staticpath/img/${MANGABZ_MID}/${MANGABZ_CID}
+if [[ ! -d $imgpath ]]; then
+    echo imgpath=$imgpath
+    mkdir -p $imgpath
+fi
+
+cat $tmpresult | while read imghref; do
+    echo imnghref=$imghref
+    filename=$(echo $imghref | grep -P '\d+_\d+.*\?' -o | sed 's/.$//g')
+    echo "filename=$filename"
+    curl -sL -H "Referer: https://www.mangabz.com/" -o ${imgpath}/${filename} $imghref
+done
+rm -f $tmpfile $tmpjson $tmpresult $tmpresult.tmp
